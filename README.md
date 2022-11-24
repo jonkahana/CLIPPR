@@ -33,6 +33,9 @@ for classification benchmarks, improving the classification
 accuracy on the ImageNet dataset by 2.83%, without using
 any labels.
 
+
+![alt text](https://github.com/jonkahana/CLIPPR/blob/main/imgs/CLIPPR_block_diagram.png?raw=true)
+
 This repository is the official PyTorch implementation of [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID)
 
 <a href="https://arxiv.org/abs/PAPER_ID" target="_blank"><img src="https://img.shields.io/badge/arXiv-PAPER_ID-b31b1b.svg"></a>
@@ -68,3 +71,10 @@ The scripts can be found in the `bash_scripts` folder sorted by dataset.
 **NOTE:** Inside the `bash_scripts\utk` folder you can also find code for our ablation studies.
 
 ### Trained Checkpoints and More Coming Soon! 
+
+
+## Citation
+If you find this useful, please cite our paper:
+```
+
+```
