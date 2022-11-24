@@ -51,7 +51,7 @@ This repository is the official PyTorch implementation of [Improving Zero-Shot M
 
 ### Downloading the Datasets
 
-You need to download the datasets first. download each to a separate directory under the same father directory.
+You need to download the datasets first. Download each to a separate directory under the same father directory.
 
 **NOTE:** Please update the `DATA_PATH` parameter in `dataset.py` and `scripts/prepare_stanford_cars.py` to the father directory of the dataset.
 
@@ -62,8 +62,8 @@ For the Stanford Cars dataset please perform our pre-processing script: `scripts
 
 ### Training
 
-We provide training & evaluation scripts for: CLIPPR, Zero-Shot CLIP (evaluation only) and a Supervised adapter on top of CLIP, for each one of the evaluated datasets.  
-The scripts can be found in the `bash_scripts` folder sorted by dataset.
+We provide training & evaluation scripts for: CLIPPR, Zero-Shot CLIP (evaluation only) and a supervised adapter on top of CLIP, for each one of the evaluated datasets.  
+The scripts can be found under the `bash_scripts` folder sorted by dataset.
 
 **NOTE:** Inside the `bash_scripts\utk` folder you can also find code for our ablation studies.
 
