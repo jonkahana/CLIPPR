@@ -37,6 +37,7 @@ This repository is the official PyTorch implementation of [Improving Zero-Shot M
 
 <a href="https://arxiv.org/abs/PAPER_ID" target="_blank"><img src="https://img.shields.io/badge/arXiv-PAPER_ID-b31b1b.svg"></a>
 
+![alt text](https://github.com/jonkahana/CLIPPR/blob/main/imgs/CLIPPR_block_diagram.png?raw=true)
 
 ## Usage
 
