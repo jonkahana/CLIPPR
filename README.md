@@ -2,7 +2,7 @@
 
 # Improving Zero-Shot Models with Label Distribution Priors
 
-> [Project Page](https://www.vision.huji.ac.il/clippr) \
+> [Project Page](https://www.vision.huji.ac.il/clippr)
 
 ### CLIPPR
 
