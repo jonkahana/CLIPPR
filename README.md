@@ -2,8 +2,6 @@
 
 # Improving Zero-Shot Models with Label Distribution Priors
 
-> [Project Page](https://www.vision.huji.ac.il/clippr)
-
 ### CLIPPR
 
 > [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID) \
@@ -38,6 +36,8 @@ any labels.
 This repository is the official PyTorch implementation of [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID)
 
 <a href="https://arxiv.org/abs/PAPER_ID" target="_blank"><img src="https://img.shields.io/badge/arXiv-PAPER_ID-b31b1b.svg"></a>
+
+You can check out our project page [here](https://www.vision.huji.ac.il/clippr).
 
 ![alt text](https://github.com/jonkahana/CLIPPR/blob/main/imgs/CLIPPR_block_diagram.png?raw=true)
 
