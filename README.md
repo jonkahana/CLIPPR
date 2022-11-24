@@ -58,3 +58,4 @@ The scripts can be found in the `bash_scripts` folder sorted by dataset.
 
 **NOTE:** Inside the `bash_scripts\utk` folder you can also find code for our ablation studies.
 
+### Trained Checkpoints and More Coming Soon! 
