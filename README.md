@@ -4,6 +4,10 @@
 
 ### CLIPPR
 
+> [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID) \
+> Joanthan Kahana, Niv Cohen, Yedid Hoshen \
+> Official PyTorch Implementation
+
 > **Abstract:**  Labeling large image datasets with attributes such as fa-
 cial age or object type is tedious and sometimes infeasible.
 Supervised machine learning methods provide a highly ac-
@@ -28,6 +32,11 @@ UTK age regression task. We also present promising results
 for classification benchmarks, improving the classification
 accuracy on the ImageNet dataset by 2.83%, without using
 any labels.
+
+This repository is the official PyTorch implementation of [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID)
+
+<a href="https://arxiv.org/abs/PAPER_ID" target="_blank"><img src="https://img.shields.io/badge/arXiv-PAPER_ID-b31b1b.svg"></a>
+
 
 ## Usage
 
