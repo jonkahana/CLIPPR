@@ -142,7 +142,8 @@ if __name__ == '__main__':
 
     exp_dir = os.path.join(save_dir, args.dataset, args.exp_name)
     if os.path.exists(exp_dir) and 'debug' not in args.exp_name:
-        raise ValueError(f'Preventing delete of previous experiment!')
+        raise ValueError(
+            f'Preventing deletion of previous experiment! To rerun this experiment first delete the folder {exp_dir}')
     os.makedirs(exp_dir, exist_ok=True)
     save_experiment_hyper_params(args, exp_dir)
     tens_dir = join(exp_dir, 'tensorboard')
