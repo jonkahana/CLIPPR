@@ -4,7 +4,7 @@
 
 ### CLIPPR
 
-> [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID) \
+> [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/2212.00784) \
 > Joanthan Kahana, Niv Cohen, Yedid Hoshen \
 > Official PyTorch Implementation
 
@@ -33,7 +33,7 @@ for classification benchmarks, improving the classification
 accuracy on the ImageNet dataset by 2.83%, without using
 any labels.
 
-This repository is the official PyTorch implementation of [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/PAPER_ID)
+This repository is the official PyTorch implementation of [Improving Zero-Shot Models with Label Distribution Priors](https://arxiv.org/abs/2212.00784)
 
 <a href="https://arxiv.org/abs/2212.00784" target="_blank"><img src="https://img.shields.io/badge/arXiv-2212.00784-b31b1b.svg"></a>
 
@@ -75,6 +75,12 @@ The scripts can be found in the `bash_scripts` folder sorted by dataset.
 
 ## Citation
 If you find this useful, please cite our paper:
+@article{kahana2022clippr,
+  title={Improving Zero-Shot Models with Label Distribution Priors},
+  author={Kahana, Jonathan and Cohen, Niv and Hoshen, Yedid},
+  journal={arXiv preprint arXiv:2212.00784},
+  year={2022}
+}
 ```
 
 ```
