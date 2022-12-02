@@ -75,12 +75,11 @@ The scripts can be found in the `bash_scripts` folder sorted by dataset.
 
 ## Citation
 If you find this useful, please cite our paper:
+```
 @article{kahana2022clippr,
   title={Improving Zero-Shot Models with Label Distribution Priors},
   author={Kahana, Jonathan and Cohen, Niv and Hoshen, Yedid},
   journal={arXiv preprint arXiv:2212.00784},
   year={2022}
 }
-```
-
 ```
