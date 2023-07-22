@@ -24,7 +24,7 @@ save_dir = 'weights'
 
 def load_model(args):
     if args.model == 'clip_vis':
-        model = CLIP_Visual(classes=classes, device=device).to(device)
+        model = CLIP_Visual(classes=classes, device=device, inet=args.dataset == 'imagenet').to(device)
     elif args.model == 'clip_zero':
         model = CLIP_Zero_Shot(classes=classes, prompt=prompt, device=device).to(device)
     else:
@@ -42,7 +42,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp-name', type=str, required=True)
-    parser.add_argument('--dataset', type=str, required=True, help="choices are ['utk', 'np', 'carpk', 'mobile_phones']")
+    parser.add_argument('--dataset', type=str, required=True, help="choices are ['utk', 'np', 'imagenet', 'carpk', 'mobile_phones']")
     parser.add_argument('--model', type=str, required=True)
     parser.add_argument('--inet-pretrain', type=bool, default=False)
     parser.add_argument('--regression', type=bool, default=True)
@@ -53,9 +53,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args = DictX(vars(args))
 
-    reg_str = 'classification' if not args.regression else f'regression'
-    args.exp_name = f'{args.exp_name}__{reg_str}'
-    print(f'Testing pre-training of {args.exp_name} Over {args.dataset} By {reg_str}')
+    print(f'Testing pre-training of {args.exp_name} Over {args.dataset}')
     device = args.device if torch.cuda.is_available() else 'cpu'
 
     transform = None
@@ -76,6 +74,19 @@ if __name__ == '__main__':
         train_set = CIFAR10(split='train')
         test_set = CIFAR10(split='test')
         prompt = PROMPTS['cifar10']
+    elif args.dataset == 'imagenet':
+        print(f'Preparing Imagenet (Train)')
+        start_time = time.time()
+        train_set = ImageNet(split='train')
+        end_time = time.time()
+        print(f'Took {np.round(end_time - start_time, 1)} seconds')
+        print(f'Preparing Imagenet (Test)')
+        start_time = time.time()
+        test_set = ImageNet(split='test')
+        end_time = time.time()
+        print(f'Took {np.round(end_time - start_time, 1)} seconds')
+        prompt = PROMPTS['imagenet']
+        args.workers = 10
     else:
         raise ValueError(f'dataset = {args.dataset}, is not supported at the moment')
 

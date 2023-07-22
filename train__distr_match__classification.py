@@ -28,21 +28,7 @@ save_dir = 'weights'
 os.makedirs(save_dir, exist_ok=True)
 best_test_loss = np.inf
 
-
-def get_model_and_parameters(model_type, model_classes, regression, prompt=None,
-                             device='cuda', inet_pretrain=False):
-    if model_type == 'clip_vis':
-        model = CLIP_Visual(classes=model_classes, device=device).to(device)
-        params = model.classifier.parameters()
-    elif model_type == 'clip_zero':
-        if regression:
-            raise ValueError(f'Cannot zero-shot with original CLIP in regression')
-        model = CLIP_Zero_Shot(classes=model_classes, prompt=prompt, device=device).to(device)
-        params = iter([])
-    else:
-        raise ValueError(f'model = {model_type}, is not supported at the moment')
-    return model, params
-
+INET_CLIP_PRETRAIN = join('weights', 'imagenet', 'inet_pretrain', 'epoch_best.pth')
 
 if __name__ == '__main__':
 
@@ -56,21 +42,25 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--assumed-dist-params', type=str, default=None)
     parser.add_argument('--acc-batches', type=int, default=1)
+    parser.add_argument('--acc-batches-over-time', type=bool, default=True)
     parser.add_argument('--inet-pretrain', type=bool, default=False)
-    parser.add_argument('--weight-decay', type=float, default=0.0001)
+    parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--scheduler-gamma', type=float, default=0.3)
     parser.add_argument('--scheduler-epochs', type=int, default=15)
+    parser.add_argument('--stage1-length', type=int, default=None)
+    parser.add_argument('--stage2-length', type=int, default=15)
     parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--weight-decay', type=float, default=0.0003)
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--save-every', type=int, default=100)
     parser.add_argument('--eval-every', type=int, default=5)
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
     args = DictX(vars(args))
 
-    if args.inet_pretrain:
-        assert args.model in ['clip_vis']
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
-    args.exp_name = f'distr_match__{args.exp_name}__classification'
     device = args.device if torch.cuda.is_available() else 'cpu'
 
     if args.assumed_dist_params is not None:
@@ -92,6 +82,19 @@ if __name__ == '__main__':
         train_set = CIFAR10(split='train')
         test_set = CIFAR10(split='test')
         prompt = PROMPTS['cifar10']
+    elif args.dataset == 'imagenet':
+        print(f'Preparing Imagenet (Train)')
+        start_time = time.time()
+        train_set = ImageNet(split='train')
+        end_time = time.time()
+        print(f'Took {np.round(end_time - start_time, 1)} seconds')
+        print(f'Preparing Imagenet (Test)')
+        start_time = time.time()
+        test_set = ImageNet(split='test')
+        end_time = time.time()
+        print(f'Took {np.round(end_time - start_time, 1)} seconds')
+        prompt = PROMPTS['imagenet']
+        args.workers = 10
     else:
         raise ValueError(f'dataset = {args.dataset}, is not supported at the moment')
 
@@ -107,13 +110,14 @@ if __name__ == '__main__':
 
     # region Model & Optimization
 
-    model, model_parameters = get_model_and_parameters(model_type='clip_vis', model_classes=classes, regression=False,
-                                                       prompt=prompt, device=device, inet_pretrain=args.inet_pretrain)
-    labels_model, _ = get_model_and_parameters(model_type='clip_zero', model_classes=classes,
-                                               regression=False, prompt=prompt, device=device, inet_pretrain=False)
+    model = CLIP_Visual(classes=classes, device=device, inet=args.dataset == 'imagenet').to(device)
+    if args.inet_pretrain:
+        model.load_state_dict(torch.load(INET_CLIP_PRETRAIN))
+    model_parameters = model.classifier.parameters()
+    labels_model = CLIP_Zero_Shot(classes=classes, prompt=prompt, device=device).to(device)
     labels_model.eval()
 
-    optimizer = optim.Adam(model_parameters, lr=0.001, weight_decay=args.weight_decay, betas=(0.9, 0.999))
+    optimizer = optim.Adam(model_parameters, lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
     scheduler = StepLR(optimizer=optimizer, step_size=len(train_loader) * args.scheduler_epochs / args.acc_batches,
                        gamma=args.scheduler_gamma)
     ce_crit = nn.CrossEntropyLoss()
@@ -152,11 +156,36 @@ if __name__ == '__main__':
 
     # endregion Prepare Logging
 
+    b_acc_preds_dist = []
+    if args.acc_batches_over_time:
+        test_b_acc_preds_dist = []
+        for i in range(args.acc_batches):
+            b_acc_preds_dist.append((torch.ones(len(classes)) / len(classes)).unsqueeze(0).to(device))
+            test_b_acc_preds_dist.append((torch.ones(len(classes)) / len(classes)).unsqueeze(0).to(device))
+
     for epoch in range(args.epochs):
+        if args.stage1_length is not None and args.stage1_length == epoch:
+            print('--------------------- Start Stage 2 ---------------------')
+            model.freeze_backbone = False
+            optimizer = optim.Adam(model.model.parameters(), lr=0.000001, weight_decay=args.weight_decay,
+                                   betas=(0.9, 0.999))
+            scheduler = StepLR(optimizer=optimizer,
+                               step_size=len(train_loader) * args.scheduler_epochs / args.acc_batches,
+                               gamma=args.scheduler_gamma)
+        if args.stage1_length is not None and args.stage1_length + args.stage2_length == epoch:
+            print('--------------------- Start Stage 3 ---------------------')
+            model.freeze_backbone = True
+            optimizer = optim.Adam(model.classifier.parameters(), lr=0.0001, weight_decay=args.weight_decay,
+                                   betas=(0.9, 0.999))
+            scheduler = StepLR(optimizer=optimizer,
+                               step_size=len(train_loader) * args.scheduler_epochs / args.acc_batches,
+                               gamma=args.scheduler_gamma)
         model.train()
         correct, total_el = 0.0, 0.0
         total_loss = 0.0
-        b_acc_pred_losses, b_acc_preds_dist = [], []
+        if not args.acc_batches_over_time:
+            b_acc_pred_losses = []
+            b_acc_preds_dist = []
         for batch_idx, (data, cls_target) in enumerate(tqdm(train_loader)):
             cls_target = cls_target.detach().cpu()
             data = data.to(device)
@@ -165,35 +194,45 @@ if __name__ == '__main__':
                 clip_cls_pred = clip_cls_pred.flatten().to(device)
             output = model(data)
             preds_loss = ce_crit(output, clip_cls_pred)
-            b_acc_pred_losses.append(preds_loss.unsqueeze(0))
+            if not args.acc_batches_over_time:
+                b_acc_pred_losses.append(preds_loss.unsqueeze(0))
 
             preds_dist = F.softmax(output, dim=-1).mean(dim=0).unsqueeze(0)
-            b_acc_preds_dist.append(preds_dist)
+
+            if args.acc_batches_over_time:
+                b_acc_preds_dist.pop(0)
+                b_acc_preds_dist.append(preds_dist)
+            else:
+                b_acc_preds_dist.append(preds_dist)
 
             writer.add_scalar('train/Batch_CE_Loss', preds_loss.item(),
                               global_step=epoch * len(train_loader) + batch_idx)
 
-            if batch_idx % args.acc_batches == 0 or batch_idx == len(train_loader) - 1:
-                acc_batches_loss = torch.cat(b_acc_pred_losses).mean()
+            if args.acc_batches_over_time or (batch_idx % args.acc_batches == 0 or batch_idx == len(train_loader) - 1):
+
+                batch_loss = preds_loss if args.acc_batches_over_time else torch.cat(b_acc_pred_losses).mean()
 
                 if args.alpha != 0.:
-                    b_acc_preds_dist = torch.cat(b_acc_preds_dist, dim=0).mean(dim=0)
-                    dist_match_loss = dist_match_crit(b_acc_preds_dist, prior_cls_probs)
+                    approx_dist = torch.cat(b_acc_preds_dist, dim=0).mean(dim=0)
+                    dist_match_loss = dist_match_crit(approx_dist, prior_cls_probs)
                     dist_match_loss *= args.alpha
                     writer.add_scalar('train/Batch_Prior_Loss', dist_match_loss.item(),
                                       global_step=epoch * len(train_loader) + batch_idx)
-                    acc_batches_loss += dist_match_loss
+                    batch_loss += dist_match_loss
 
-                acc_batches_loss.backward()
+                batch_loss.backward()
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
-                total_loss += acc_batches_loss.item()
-                writer.add_scalar('train/Batch_Loss', acc_batches_loss.item(),
+                total_loss += batch_loss.item()
+                writer.add_scalar('train/Batch_Loss', batch_loss.item(),
                                   global_step=epoch * len(train_loader) + batch_idx)
 
-                b_acc_pred_losses, b_acc_preds_dist = [], []
-                acc_batches_loss = 0.
+                if args.acc_batches_over_time:
+                    b_acc_preds_dist[-1] = b_acc_preds_dist[-1].detach()
+                else:
+                    b_acc_pred_losses, b_acc_preds_dist = [], []
+                batch_loss = 0.
 
             cls_pred = output.argmax(dim=1, keepdim=True)
             cls_pred = cls_pred.detach().cpu()
@@ -224,7 +263,8 @@ if __name__ == '__main__':
             correct, total_el = 0.0, 0.0
             test_total_loss, test_prior_loss, test_ce_loss = 0.0, 0.0, 0.0
             b_accs = []
-            b_acc_pred_losses, b_acc_preds_dist = [], []
+            if not args.acc_batches_over_time:
+                test_b_acc_pred_losses, test_b_acc_preds_dist = [], []
             for batch_idx, (data, cls_target) in enumerate(tqdm(test_loader)):
                 cls_target = cls_target.detach().cpu()
                 data = data.to(device)
@@ -234,28 +274,37 @@ if __name__ == '__main__':
                     clip_cls_pred = clip_cls_pred.flatten().to(device)
                     output = model(data).detach()
                     preds_loss = ce_crit(output, clip_cls_pred)
-                    b_acc_pred_losses.append(preds_loss.unsqueeze(0))
+                    if not args.acc_batches_over_time:
+                        test_b_acc_pred_losses.append(preds_loss.unsqueeze(0))
 
                     preds_dist = F.softmax(output, dim=-1).mean(dim=0).unsqueeze(0)
-                    b_acc_preds_dist.append(preds_dist)
+                    if args.acc_batches_over_time:
+                        test_b_acc_preds_dist.pop(0)
+                        test_b_acc_preds_dist.append(preds_dist.detach())
+                    else:
+                        test_b_acc_preds_dist.append(preds_dist)
 
-                    if batch_idx % args.acc_batches == 0 or batch_idx == len(test_loader) - 1:
-                        acc_batches_loss = torch.cat(b_acc_pred_losses).mean()
+                    if args.acc_batches_over_time or (batch_idx % args.acc_batches == 0 or batch_idx == len(test_loader) - 1):
+
+                        batch_loss = preds_loss if args.acc_batches_over_time else torch.cat(test_b_acc_pred_losses).mean()
 
                         if args.alpha != 0.:
-                            b_acc_preds_dist = torch.cat(b_acc_preds_dist, dim=0).mean(dim=0)
-                            dist_match_loss = dist_match_crit(b_acc_preds_dist, prior_cls_probs)
+                            approx_dist = torch.cat(test_b_acc_preds_dist, dim=0).mean(dim=0)
+                            dist_match_loss = dist_match_crit(approx_dist, prior_cls_probs)
                             dist_match_loss *= args.alpha
-                            writer.add_scalar('train/Batch_Prior_Loss', dist_match_loss.item(),
+                            writer.add_scalar('test/Batch_Prior_Loss', dist_match_loss.item(),
                                               global_step=epoch * len(test_loader) + batch_idx)
                             test_prior_loss += dist_match_loss.item()
-                            acc_batches_loss += dist_match_loss
+                            batch_loss += dist_match_loss
 
-                        writer.add_scalar('train/Batch_Loss', acc_batches_loss.item(),
+                        writer.add_scalar('test/Batch_Loss', batch_loss.item(),
                                           global_step=epoch * len(train_loader) + batch_idx)
-                        test_total_loss += acc_batches_loss.item()
-                        b_acc_pred_losses, b_acc_preds_dist = [], []
-                        acc_batches_loss = 0.
+                        test_total_loss += batch_loss.item()
+                        if args.acc_batches_over_time:
+                            test_b_acc_preds_dist[-1] = test_b_acc_preds_dist[-1].detach()
+                        else:
+                            test_b_acc_pred_losses, test_b_acc_preds_dist = [], []
+                        batch_loss = 0.
 
                     cls_pred = output.argmax(dim=1, keepdim=True)
                     cls_pred = cls_pred.detach().cpu()

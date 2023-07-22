@@ -74,17 +74,22 @@ class CLIP_Zero_Shot(nn.Module):
 
 class CLIP_Visual(nn.Module):
 
-    def __init__(self, classes, device='cuda'):
+    def __init__(self, classes, freeze_backbone=True, device='cuda', inet=False):
         super(CLIP_Visual, self).__init__()
         self.device = device
-        self.backbone = 'ViT-B/16'
+        self.backbone = 'ViT-B/32'
+        self.freeze_backbone = freeze_backbone
         self.classes = classes
         self.out_size = 1 if classes is None else len(classes)
         model, preprocess = clip.load(self.backbone, device)
         self.model, self.preprocess = model.visual.float(), preprocess
         backbone_out_size = 512
-        self.classifier = nn.Sequential(nn.Linear(backbone_out_size, 128), nn.ReLU(),
-                                        nn.Linear(128, 128), nn.ReLU(),
+        self.classifier = nn.Sequential(nn.Linear(backbone_out_size, 128),
+                                        nn.BatchNorm1d(128) if inet else nn.Identity(),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(128, 128),
+                                        nn.BatchNorm1d(128) if inet else nn.Identity(),
+                                        nn.LeakyReLU(),
                                         nn.Linear(128, self.out_size, bias=False)).to(device)
         # self.classifier = nn.Linear(backbone_out_size, self.out_size, bias=True).to(device)
         # torch.nn.init.xavier_uniform(self.classifier.weight)
@@ -96,9 +101,12 @@ class CLIP_Visual(nn.Module):
         return img_repr
 
     def forward(self, x):
-        with torch.no_grad():
+        if self.freeze_backbone:
+            with torch.no_grad():
+                clip_repr = self.clip_feature_extractor(x)
+                clip_repr = clip_repr.float().detach()
+        else:
             clip_repr = self.clip_feature_extractor(x)
-            clip_repr = clip_repr.float().detach()
         output = self.classifier(clip_repr)
         if self.out_size == 1:
             output = output.squeeze(-1)

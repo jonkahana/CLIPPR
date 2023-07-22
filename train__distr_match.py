@@ -27,20 +27,6 @@ os.makedirs(save_dir, exist_ok=True)
 best_test_loss = np.inf
 
 
-def get_model_and_parameters(model_type, model_classes, regression, prompt=None, device='cuda'):
-    if model_type == 'clip_vis':
-        model = CLIP_Visual(classes=model_classes, device=device).to(device)
-        params = model.classifier.parameters()
-    elif model_type == 'clip_zero':
-        if regression:
-            raise ValueError(f'Cannot zero-shot with original CLIP in regression')
-        model = CLIP_Zero_Shot(classes=model_classes, prompt=prompt, device=device).to(device)
-        params = iter([])
-    else:
-        raise ValueError(f'model = {model_type}, is not supported at the moment')
-    return model, params
-
-
 def sample_assumed_distribution(dist_parameters, num_samples):
     dist_type = dist_parameters['dist_type']
     if dist_type == 'gaussian':
@@ -71,14 +57,18 @@ if __name__ == '__main__':
     parser.add_argument('--scheduler-epochs', type=int, default=15)
     parser.add_argument('--swd-sampled-batch', type=int, default=None)
     parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--weight-decay', type=float, default=0.0003)
+    parser.add_argument('--stage1-length', type=int, default=None)
+    parser.add_argument('--stage2-length', type=int, default=15)
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--save-every', type=int, default=100)
     parser.add_argument('--eval-every', type=int, default=5)
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
     args = DictX(vars(args))
 
-    reg_str = f'regression'
-    args.exp_name = f'distr_match__{args.exp_name}__{reg_str}'
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     device = args.device if torch.cuda.is_available() else 'cpu'
 
     if args.assumed_dist_params is not None:
@@ -118,11 +108,12 @@ if __name__ == '__main__':
 
     # region Model & Optimization
 
-    model, model_parameters = get_model_and_parameters('clip_vis', None, True, prompt=prompt, device=device)
-    labels_model, _ = get_model_and_parameters('clip_zero', classes, False, prompt=prompt, device=device)
+    model = CLIP_Visual(classes=None, device=device).to(device)
+    model_parameters = model.classifier.parameters()
+    labels_model = CLIP_Zero_Shot(classes=classes, prompt=prompt, device=device).to(device)
     labels_model.eval()
 
-    optimizer = optim.Adam(model_parameters, lr=0.001, weight_decay=0.0001, betas=(0.9, 0.999))
+    optimizer = optim.Adam(model_parameters, lr=0.001, weight_decay=args.weight_decay, betas=(0.9, 0.999))
     scheduler = StepLR(optimizer=optimizer, step_size=len(train_loader) * args.scheduler_epochs,
                        gamma=args.scheduler_gamma)
     l1_crit = nn.L1Loss()
@@ -150,6 +141,23 @@ if __name__ == '__main__':
     # endregion Prepare Logging
 
     for epoch in range(args.epochs):
+        print(f'\n')
+        if args.stage1_length is not None and args.stage1_length == epoch:
+            print('--------------------- Start Stage 2 ---------------------')
+            model.freeze_backbone = False
+            optimizer = optim.Adam(model.model.parameters(), lr=0.0000001, weight_decay=args.weight_decay,
+                                   betas=(0.9, 0.999))
+            scheduler = StepLR(optimizer=optimizer,
+                               step_size=len(train_loader) * args.scheduler_epochs,
+                               gamma=args.scheduler_gamma)
+        if args.stage1_length is not None and args.stage1_length + args.stage2_length == epoch:
+            print('--------------------- Start Stage 3 ---------------------')
+            model.freeze_backbone = True
+            optimizer = optim.Adam(model.classifier.parameters(), lr=0.0001, weight_decay=args.weight_decay,
+                                   betas=(0.9, 0.999))
+            scheduler = StepLR(optimizer=optimizer,
+                               step_size=len(train_loader) * args.scheduler_epochs, gamma=args.scheduler_gamma)
+
         model.train()
         b_maes = []
         total_loss = 0.0

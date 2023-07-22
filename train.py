@@ -39,11 +39,18 @@ if __name__ == '__main__':
     parser.add_argument('--scheduler-gamma', type=float, default=0.3)
     parser.add_argument('--scheduler-epochs', type=int, default=15)
     parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--weight-decay', type=float, default=0.0003)
+    parser.add_argument('--stage1-length', type=int, default=None)
+    parser.add_argument('--stage2-length', type=int, default=15)
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--save-every', type=int, default=100)
     parser.add_argument('--eval-every', type=int, default=5)
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
     args = DictX(vars(args))
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     reg_str = 'classification' if not args.regression else f'regression'
     args.exp_name = f'{args.exp_name}__{reg_str}'
@@ -67,6 +74,19 @@ if __name__ == '__main__':
         train_set = CIFAR10(split='train')
         test_set = CIFAR10(split='test')
         prompt = PROMPTS['cifar10']
+    elif args.dataset == 'imagenet':
+        print(f'Preparing Imagenet (Train)')
+        start_time = time.time()
+        train_set = ImageNet(split='train')
+        end_time = time.time()
+        print(f'Took {np.round(end_time - start_time, 1)} seconds')
+        print(f'Preparing Imagenet (Test)')
+        start_time = time.time()
+        test_set = ImageNet(split='test')
+        end_time = time.time()
+        print(f'Took {np.round(end_time - start_time, 1)} seconds')
+        prompt = PROMPTS['imagenet']
+        args.workers = 10
     else:
         raise ValueError(f'dataset = {args.dataset}, is not supported at the moment')
 
@@ -77,10 +97,10 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, pin_memory=True,
                              num_workers=args.workers)
 
-    model = CLIP_Visual(classes=classes, device=device).to(device)
+    model = CLIP_Visual(classes=classes, device=device, inet=args.dataset == 'imagenet').to(device)
     model_parameters = model.classifier.parameters()
 
-    optimizer = optim.Adam(model_parameters, lr=0.001, weight_decay=0.0001, betas=(0.9, 0.999))
+    optimizer = optim.Adam(model_parameters, lr=0.001, weight_decay=args.weight_decay, betas=(0.9, 0.999))
     scheduler = StepLR(optimizer=optimizer, step_size=len(train_loader) * args.scheduler_epochs,
                        gamma=args.scheduler_gamma)
     crit = nn.L1Loss() if args.regression else nn.CrossEntropyLoss()
@@ -96,6 +116,23 @@ if __name__ == '__main__':
     writer = SummaryWriter(tens_dir)
 
     for epoch in range(args.epochs):
+        print(f'\n')
+        if args.stage1_length is not None and args.stage1_length == epoch:
+            print('--------------------- Start Stage 2 ---------------------')
+            model.freeze_backbone = False
+            new_lr = 0.0000001 if args.regression else 0.000001
+            optimizer = optim.Adam(model.model.parameters(), lr=new_lr, weight_decay=args.weight_decay,
+                                   betas=(0.9, 0.999))
+            scheduler = StepLR(optimizer=optimizer,
+                               step_size=len(train_loader) * args.scheduler_epochs,
+                               gamma=args.scheduler_gamma)
+        if args.stage1_length is not None and args.stage1_length + args.stage2_length == epoch:
+            print('--------------------- Start Stage 3 ---------------------')
+            model.freeze_backbone = True
+            optimizer = optim.Adam(model.classifier.parameters(), lr=0.0001, weight_decay=args.weight_decay,
+                                   betas=(0.9, 0.999))
+            scheduler = StepLR(optimizer=optimizer,
+                               step_size=len(train_loader) * args.scheduler_epochs, gamma=args.scheduler_gamma)
         model.train()
         total_loss, avg_loss = 0.0, 0.0
         correct, total_el = 0.0, 0.0
